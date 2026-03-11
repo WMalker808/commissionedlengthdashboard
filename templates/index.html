@@ -1,0 +1,576 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Guardian Commissioned Length Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2.2.0/dist/chartjs-plugin-datalabels.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #f5f5f0;
+      color: #1a1a1a;
+      font-size: 14px;
+    }
+
+    header {
+      background: #052962;
+      color: #fff;
+      padding: 16px 24px;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 { font-size: 18px; font-weight: 700; }
+    header span { font-size: 13px; opacity: 0.7; }
+
+    .container { max-width: 1280px; margin: 0 auto; padding: 20px 24px; }
+
+    /* Filters */
+    .filters {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 16px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      gap: 16px;
+      align-items: flex-end;
+      margin-bottom: 20px;
+    }
+    .filter-group { display: flex; flex-direction: column; gap: 4px; }
+    .filter-group label { font-size: 12px; font-weight: 600; color: #555; text-transform: uppercase; letter-spacing: 0.04em; }
+    .filter-group input,
+    .filter-group select {
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 7px 10px;
+      font-size: 14px;
+      min-width: 140px;
+    }
+    .filter-group input:focus,
+    .filter-group select:focus { outline: 2px solid #052962; border-color: transparent; }
+
+    .btn-search {
+      background: #052962;
+      color: #fff;
+      border: none;
+      border-radius: 4px;
+      padding: 8px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      cursor: pointer;
+      align-self: flex-end;
+    }
+    .btn-search:hover { background: #0a3d87; }
+    .btn-search:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    /* Status bar */
+    .status-bar {
+      font-size: 13px;
+      color: #666;
+      margin-bottom: 16px;
+      min-height: 20px;
+    }
+    .status-bar.error { color: #c00; }
+
+    /* Metric cards */
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 12px;
+      margin-bottom: 20px;
+    }
+    .metric-card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 14px 16px;
+    }
+    .metric-card .label { font-size: 11px; font-weight: 600; color: #777; text-transform: uppercase; letter-spacing: 0.04em; margin-bottom: 4px; }
+    .metric-card .value { font-size: 28px; font-weight: 700; color: #052962; }
+    .metric-card .sub { font-size: 12px; color: #999; margin-top: 2px; }
+
+    /* Charts */
+    .charts {
+      display: grid;
+      grid-template-columns: 1fr;
+      gap: 16px;
+      margin-bottom: 20px;
+    }
+    .chart-card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 16px;
+    }
+    .chart-card h3 { font-size: 13px; font-weight: 600; color: #333; margin-bottom: 12px; }
+    .chart-card canvas { max-height: 400px; }
+
+    /* Table */
+    .table-card {
+      background: #fff;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      overflow: hidden;
+    }
+    .table-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 12px 16px;
+      border-bottom: 1px solid #eee;
+    }
+    .table-header h3 { font-size: 13px; font-weight: 600; color: #333; }
+    .table-actions { display: flex; gap: 8px; align-items: center; }
+    .table-search {
+      border: 1px solid #ccc;
+      border-radius: 4px;
+      padding: 5px 10px;
+      font-size: 13px;
+      width: 200px;
+    }
+    .btn-csv {
+      background: #e8f5e9;
+      color: #2e7d32;
+      border: 1px solid #c8e6c9;
+      border-radius: 4px;
+      padding: 5px 12px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+    }
+    .btn-csv:hover { background: #c8e6c9; }
+    .btn-csv:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th {
+      background: #f9f9f7;
+      padding: 8px 12px;
+      text-align: left;
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #555;
+      border-bottom: 1px solid #eee;
+      cursor: pointer;
+      white-space: nowrap;
+      user-select: none;
+    }
+    thead th:hover { background: #f0f0ec; }
+    thead th.sorted-asc::after { content: " ↑"; }
+    thead th.sorted-desc::after { content: " ↓"; }
+    tbody tr:nth-child(even) { background: #fafafa; }
+    tbody tr:hover { background: #f0f4ff; }
+    tbody td { padding: 7px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: top; }
+    tbody td a { color: #052962; text-decoration: none; }
+    tbody td a:hover { text-decoration: underline; }
+    .badge {
+      display: inline-block;
+      padding: 2px 6px;
+      border-radius: 3px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge-yes { background: #e8f5e9; color: #2e7d32; }
+    .badge-no { background: #fce4ec; color: #b71c1c; }
+    .badge-na { background: #f5f5f5; color: #999; }
+
+    .table-footer { padding: 10px 16px; font-size: 12px; color: #888; border-top: 1px solid #eee; }
+
+    /* Empty/loading state */
+    .empty-state {
+      text-align: center;
+      padding: 60px 20px;
+      color: #999;
+    }
+    .empty-state .icon { font-size: 40px; margin-bottom: 12px; }
+    .empty-state p { font-size: 14px; }
+
+    .spinner {
+      display: inline-block;
+      width: 16px; height: 16px;
+      border: 2px solid #ccc;
+      border-top-color: #052962;
+      border-radius: 50%;
+      animation: spin 0.6s linear infinite;
+      vertical-align: middle;
+      margin-right: 6px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>Commissioned Length Dashboard</h1>
+    <span>Guardian Content API</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <!-- Filters -->
+  <form class="filters" id="filterForm">
+    <div class="filter-group">
+      <label>From date</label>
+      <input type="date" id="fromDate" value="{{ default_from }}" required>
+    </div>
+    <div class="filter-group">
+      <label>To date</label>
+      <input type="date" id="toDate" value="{{ default_to }}" required>
+    </div>
+    <div class="filter-group">
+      <label>Desk (contains)</label>
+      <input type="text" id="deskFilter" placeholder="e.g. UK Sport, US News" style="min-width:180px">
+    </div>
+    <div class="filter-group">
+      <label>Commissioned length</label>
+      <select id="clFilter">
+        <option value="">All</option>
+        <option value="400">400</option>
+        <option value="650">650</option>
+        <option value="900">900</option>
+        <option value="1200">1200</option>
+        <option value="custom">Custom…</option>
+      </select>
+    </div>
+    <div class="filter-group" id="customClGroup" style="display:none">
+      <label>Custom length</label>
+      <input type="number" id="customCl" placeholder="e.g. 750" style="min-width:110px">
+    </div>
+    <button type="submit" class="btn-search" id="searchBtn">Search</button>
+  </form>
+
+  <div class="status-bar" id="statusBar"></div>
+
+  <!-- Metric cards -->
+  <div class="metrics" id="metrics" style="display:none">
+    <div class="metric-card">
+      <div class="label">Total articles</div>
+      <div class="value" id="metricTotal">—</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">With commissioned length</div>
+      <div class="value" id="metricHasCl">—</div>
+      <div class="sub" id="metricHasClPct"></div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Uses standard length</div>
+      <div class="value" id="metricStandard">—</div>
+      <div class="sub">400 / 650 / 900 / 1200</div>
+    </div>
+    <div class="metric-card">
+      <div class="label">Avg word count</div>
+      <div class="value" id="metricAvgWc">—</div>
+      <div class="sub">across all articles</div>
+    </div>
+  </div>
+
+  <!-- Charts -->
+  <div class="charts" id="charts" style="display:none">
+    <div class="chart-card">
+      <h3>Commissioned length distribution</h3>
+      <canvas id="barChart"></canvas>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-card" id="tableCard">
+    <div class="table-header">
+      <h3>Articles</h3>
+      <div class="table-actions">
+        <input type="text" class="table-search" id="tableSearch" placeholder="Filter table…">
+        <button class="btn-csv" id="csvBtn" disabled>Download CSV</button>
+      </div>
+    </div>
+    <div id="tableWrap">
+      <div class="empty-state">
+        <div class="icon">🔍</div>
+        <p>Set filters above and click Search to load articles.</p>
+      </div>
+    </div>
+    <div class="table-footer" id="tableFooter"></div>
+  </div>
+
+</div>
+
+<script>
+  // ─── State ───────────────────────────────────────────────────────────────────
+  let allArticles = [];
+  let filteredArticles = [];
+  let barChart = null;
+  let sortCol = 'creationDate';
+  let sortDir = 'desc';
+
+  // ─── Custom commissioned length toggle ───────────────────────────────────────
+  document.getElementById('clFilter').addEventListener('change', function() {
+    document.getElementById('customClGroup').style.display =
+      this.value === 'custom' ? '' : 'none';
+  });
+
+  // ─── Form submit ─────────────────────────────────────────────────────────────
+  document.getElementById('filterForm').addEventListener('submit', async function(e) {
+    e.preventDefault();
+    await runSearch();
+  });
+
+  async function runSearch() {
+    const fromDate = document.getElementById('fromDate').value;
+    const toDate = document.getElementById('toDate').value;
+    const desk = document.getElementById('deskFilter').value.trim();
+    const clSelect = document.getElementById('clFilter').value;
+    let cl = clSelect === 'custom' ? document.getElementById('customCl').value.trim() : clSelect;
+
+    const params = new URLSearchParams({ from_date: fromDate, to_date: toDate });
+    if (desk) params.set('desk', desk);
+    if (cl) params.set('commissioned_length', cl);
+
+    setLoading(true);
+
+    try {
+      const resp = await fetch('/api/search?' + params.toString());
+      const data = await resp.json();
+
+      if (!resp.ok) {
+        setError(data.error || 'Unknown error');
+        return;
+      }
+
+      allArticles = data.articles;
+      renderDashboard(data.summary, data.total_fetched, data.capped);
+    } catch (err) {
+      setError('Network error: ' + err.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
+  function renderDashboard(summary, totalFetched, capped) {
+    const statusBar = document.getElementById('statusBar');
+    statusBar.className = 'status-bar';
+    let msg = `Fetched ${totalFetched.toLocaleString()} article${totalFetched !== 1 ? 's' : ''}.`;
+    if (capped) msg += ' Results capped at 10,000 — narrow your date range for complete data.';
+    else if (totalFetched > 1000) msg += ' Showing first 1,000 in table.';
+    statusBar.textContent = msg;
+
+    // Metrics
+    document.getElementById('metrics').style.display = '';
+    document.getElementById('metricTotal').textContent = summary.total.toLocaleString();
+    document.getElementById('metricHasCl').textContent = summary.has_commissioned_length.toLocaleString();
+    document.getElementById('metricHasClPct').textContent =
+      pct(summary.pct_with_commissioned_length) + ' of total';
+    document.getElementById('metricStandard').textContent =
+      pct(summary.pct_uses_standard_length);
+    document.getElementById('metricAvgWc').textContent =
+      summary.avg_wordcount.toLocaleString();
+
+    // Charts
+    document.getElementById('charts').style.display = '';
+    renderBarChart(summary.length_distribution);
+
+    // Table
+    filteredArticles = [...allArticles];
+    document.getElementById('tableSearch').value = '';
+    document.getElementById('csvBtn').disabled = false;
+    sortCol = 'creationDate'; sortDir = 'desc';
+    renderTable();
+  }
+
+  function pct(val) {
+    return (val * 100).toFixed(1) + '%';
+  }
+
+  // ─── Charts ──────────────────────────────────────────────────────────────────
+  function renderBarChart(dist) {
+    const ctx = document.getElementById('barChart').getContext('2d');
+    if (barChart) barChart.destroy();
+    const labels = Object.keys(dist);
+    const values = Object.values(dist);
+    barChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels,
+        datasets: [{
+          label: 'Articles',
+          data: values,
+          backgroundColor: '#052962cc',
+          borderRadius: 3,
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: {
+            ticks: { font: { size: 11 }, maxRotation: 45, autoSkip: false },
+            grid: { display: false }
+          },
+          y: {
+            ticks: { font: { size: 11 } },
+            grid: { color: '#f0f0f0' }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          datalabels: {
+            anchor: 'end',
+            align: 'end',
+            formatter: v => v.toLocaleString(),
+            font: { size: 11, weight: '600' },
+            color: '#333',
+          }
+        }
+      },
+      plugins: [ChartDataLabels],
+    });
+  }
+
+  // ─── Table ───────────────────────────────────────────────────────────────────
+  const columns = [
+    { key: 'headline',          label: 'Headline',    sortable: true },
+    { key: 'creationDate',      label: 'Created',     sortable: true },
+    { key: 'publicationDate',   label: 'Published',   sortable: true },
+    { key: 'commissioningDesk', label: 'Desk',        sortable: true },
+    { key: 'wordcount',         label: 'Word count',  sortable: true },
+    { key: 'commissionedLength',label: 'Comm. length',sortable: true },
+    { key: 'withinTenPct',      label: '±10%?',       sortable: false },
+  ];
+
+  function renderTable() {
+    const tbody = [];
+    const sorted = [...filteredArticles].sort((a, b) => {
+      let av = a[sortCol] ?? '';
+      let bv = b[sortCol] ?? '';
+      if (typeof av === 'string') av = av.toLowerCase();
+      if (typeof bv === 'string') bv = bv.toLowerCase();
+      if (av < bv) return sortDir === 'asc' ? -1 : 1;
+      if (av > bv) return sortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    for (const a of sorted) {
+      const within = a.withinTenPct === null ? '<span class="badge badge-na">N/A</span>'
+        : a.withinTenPct ? '<span class="badge badge-yes">Yes</span>'
+        : '<span class="badge badge-no">No</span>';
+
+      const headlineCell = a.webUrl
+        ? `<a href="${esc(a.webUrl)}" target="_blank" rel="noopener">${esc(a.headline || a.webUrl)}</a>`
+        : esc(a.headline || '');
+
+      tbody.push(`<tr>
+        <td>${headlineCell}</td>
+        <td>${a.creationDate || ''}</td>
+        <td>${a.publicationDate || ''}</td>
+        <td>${esc(a.commissioningDesk)}</td>
+        <td>${a.wordcount != null ? a.wordcount.toLocaleString() : '—'}</td>
+        <td>${a.commissionedLength != null ? a.commissionedLength.toLocaleString() : '—'}</td>
+        <td>${within}</td>
+      </tr>`);
+    }
+
+    const headerCells = columns.map(c => {
+      let cls = '';
+      if (c.sortable) {
+        if (sortCol === c.key) cls = sortDir === 'asc' ? 'sorted-asc' : 'sorted-desc';
+        return `<th class="${cls}" data-key="${c.key}" style="cursor:pointer">${c.label}</th>`;
+      }
+      return `<th>${c.label}</th>`;
+    }).join('');
+
+    document.getElementById('tableWrap').innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>${headerCells}</tr></thead>
+          <tbody>${tbody.join('') || '<tr><td colspan="7" style="text-align:center;padding:20px;color:#999">No articles match the current filters.</td></tr>'}</tbody>
+        </table>
+      </div>`;
+
+    document.getElementById('tableFooter').textContent =
+      `Showing ${sorted.length.toLocaleString()} of ${allArticles.length.toLocaleString()} articles.`;
+
+    // Attach sort handlers
+    document.querySelectorAll('thead th[data-key]').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.key;
+        if (sortCol === key) {
+          sortDir = sortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          sortCol = key;
+          sortDir = 'asc';
+        }
+        renderTable();
+      });
+    });
+  }
+
+  // ─── Table search filter ──────────────────────────────────────────────────────
+  document.getElementById('tableSearch').addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    filteredArticles = allArticles.filter(a =>
+      (a.headline || '').toLowerCase().includes(q) ||
+      (a.commissioningDesk || '').toLowerCase().includes(q) ||
+      String(a.wordcount || '').includes(q) ||
+      String(a.commissionedLength || '').includes(q) ||
+      (a.creationDate || '').includes(q) ||
+      (a.publicationDate || '').includes(q)
+    );
+    renderTable();
+  });
+
+  // ─── CSV download ─────────────────────────────────────────────────────────────
+  document.getElementById('csvBtn').addEventListener('click', function() {
+    if (!allArticles.length) return;
+    const header = 'headline,creationDate,publicationDate,commissioningDesk,wordcount,commissionedLength,withinTenPct,webUrl';
+    const rows = allArticles.map(a =>
+      [`"${(a.headline||'').replace(/"/g,'""')}"`,
+       a.creationDate, a.publicationDate, `"${(a.commissioningDesk||'').replace(/"/g,'""')}"`,
+       a.wordcount ?? '', a.commissionedLength ?? '',
+       a.withinTenPct === null ? '' : a.withinTenPct ? 'true' : 'false',
+       a.webUrl].join(',')
+    );
+    const csv = [header, ...rows].join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = 'guardian-commissioned-lengths.csv';
+    link.click();
+    URL.revokeObjectURL(url);
+  });
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
+  function esc(str) {
+    return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function setLoading(loading) {
+    const btn = document.getElementById('searchBtn');
+    const statusBar = document.getElementById('statusBar');
+    if (loading) {
+      btn.disabled = true;
+      btn.textContent = 'Fetching…';
+      statusBar.className = 'status-bar';
+      statusBar.innerHTML = '<span class="spinner"></span>Querying CAPI — this may take a moment for large date ranges…';
+    } else {
+      btn.disabled = false;
+      btn.textContent = 'Search';
+    }
+  }
+
+  function setError(msg) {
+    const statusBar = document.getElementById('statusBar');
+    statusBar.className = 'status-bar error';
+    statusBar.textContent = 'Error: ' + msg;
+    document.getElementById('tableWrap').innerHTML =
+      '<div class="empty-state"><div class="icon">⚠️</div><p>' + esc(msg) + '</p></div>';
+  }
+</script>
+</body>
+</html>
