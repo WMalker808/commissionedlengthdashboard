@@ -1,3 +1,4 @@
+import re
 import requests
 from typing import Optional
 
@@ -81,8 +82,8 @@ def fetch_articles(
 
     # Apply filters in Python
     if desk_filter:
-        desk_lower = desk_filter.lower()
-        articles = [a for a in articles if desk_lower in a["commissioningDesk"].lower()]
+        pattern = re.compile(r'\b' + re.escape(desk_filter) + r'\b', re.IGNORECASE)
+        articles = [a for a in articles if pattern.search(a["commissioningDesk"])]
 
     if commissioned_length_filter is not None:
         articles = [a for a in articles if a["commissionedLength"] == commissioned_length_filter]
