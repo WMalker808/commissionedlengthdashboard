@@ -177,9 +177,11 @@
       font-size: 11px;
       font-weight: 600;
     }
-    .badge-yes { background: #e8f5e9; color: #2e7d32; }
-    .badge-no { background: #fce4ec; color: #b71c1c; }
-    .badge-na { background: #f5f5f5; color: #999; }
+    .badge-green      { background: #e8f5e9; color: #2e7d32; }
+    .badge-orange     { background: #fff3e0; color: #e65100; }
+    .badge-red-orange { background: #fbe9e7; color: #bf360c; }
+    .badge-red        { background: #fce4ec; color: #b71c1c; }
+    .badge-na         { background: #f5f5f5; color: #999; }
 
     .table-footer { padding: 10px 16px; font-size: 12px; color: #888; border-top: 1px solid #eee; }
 
@@ -447,8 +449,18 @@
     { key: 'commissioningDesk', label: 'Desk',        sortable: true },
     { key: 'wordcount',         label: 'Word count',  sortable: true },
     { key: 'commissionedLength',label: 'Comm. length',sortable: true },
-    { key: 'withinTenPct',      label: '±10%?',       sortable: false },
+    { key: 'deviation',         label: 'Deviation',   sortable: true },
   ];
+
+  function deviationBadge(dev) {
+    if (dev === null || dev === undefined) return '<span class="badge badge-na">N/A</span>';
+    let cls;
+    if (dev <= 10)       cls = 'badge-green';
+    else if (dev <= 30)  cls = 'badge-orange';
+    else if (dev <= 100) cls = 'badge-red-orange';
+    else                 cls = 'badge-red';
+    return `<span class="badge ${cls}">${dev}%</span>`;
+  }
 
   function renderTable() {
     const tbody = [];
@@ -463,9 +475,7 @@
     });
 
     for (const a of sorted) {
-      const within = a.withinTenPct === null ? '<span class="badge badge-na">N/A</span>'
-        : a.withinTenPct ? '<span class="badge badge-yes">Yes</span>'
-        : '<span class="badge badge-no">No</span>';
+      const within = deviationBadge(a.deviation);
 
       const headlineCell = a.webUrl
         ? `<a href="${esc(a.webUrl)}" target="_blank" rel="noopener">${esc(a.headline || a.webUrl)}</a>`
@@ -534,12 +544,12 @@
   // ─── CSV download ─────────────────────────────────────────────────────────────
   document.getElementById('csvBtn').addEventListener('click', function() {
     if (!allArticles.length) return;
-    const header = 'headline,creationDate,publicationDate,commissioningDesk,wordcount,commissionedLength,withinTenPct,webUrl';
+    const header = 'headline,creationDate,publicationDate,commissioningDesk,wordcount,commissionedLength,deviationPct,webUrl';
     const rows = allArticles.map(a =>
       [`"${(a.headline||'').replace(/"/g,'""')}"`,
        a.creationDate, a.publicationDate, `"${(a.commissioningDesk||'').replace(/"/g,'""')}"`,
        a.wordcount ?? '', a.commissionedLength ?? '',
-       a.withinTenPct === null ? '' : a.withinTenPct ? 'true' : 'false',
+       a.deviation ?? '',
        a.webUrl].join(',')
     );
     const csv = [header, ...rows].join('\n');
