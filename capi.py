@@ -22,9 +22,9 @@ def _parse_article(raw: dict) -> dict:
     wordcount = int(wordcount_str) if wordcount_str else None
     commissioned_length = int(commissioned_str) if commissioned_str else None
 
-    within_ten_pct = None
-    if wordcount is not None and commissioned_length is not None:
-        within_ten_pct = abs(wordcount - commissioned_length) < commissioned_length * 0.1
+    deviation = None
+    if wordcount is not None and commissioned_length is not None and commissioned_length > 0:
+        deviation = round(abs(wordcount - commissioned_length) / commissioned_length * 100, 1)
 
     return {
         "headline": fields.get("headline", ""),
@@ -34,7 +34,7 @@ def _parse_article(raw: dict) -> dict:
         "wordcount": wordcount,
         "commissionedLength": commissioned_length,
         "commissioningDesk": commissioning_desk,
-        "withinTenPct": within_ten_pct,
+        "deviation": deviation,
         "usesStandardLength": commissioned_length in STANDARD_LENGTHS if commissioned_length else False,
     }
 
