@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en-GB">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -185,6 +185,27 @@
 
     .table-footer { padding: 10px 16px; font-size: 12px; color: #888; border-top: 1px solid #eee; }
 
+    /* Tabs */
+    .tab-bar {
+      display: flex;
+      gap: 0;
+      border-bottom: 2px solid #ddd;
+      margin-bottom: 20px;
+    }
+    .tab-btn {
+      background: none;
+      border: none;
+      border-bottom: 3px solid transparent;
+      margin-bottom: -2px;
+      padding: 10px 20px;
+      font-size: 14px;
+      font-weight: 600;
+      color: #666;
+      cursor: pointer;
+    }
+    .tab-btn:hover { color: #052962; }
+    .tab-btn.active { color: #052962; border-bottom-color: #052962; }
+
     /* Empty/loading state */
     .empty-state {
       text-align: center;
@@ -229,7 +250,7 @@
       <input type="date" id="toDate" value="{{ default_to }}" required>
     </div>
     <div class="filter-group">
-      <label>Commissioning desk (contains)</label>
+      <label>Desk (contains)</label>
       <input type="text" id="deskFilter" placeholder="e.g. UK Sport, US News" style="min-width:180px">
     </div>
     <div class="filter-group">
@@ -251,6 +272,16 @@
   </form>
 
   <div class="status-bar" id="statusBar"></div>
+
+  <!-- Tab bar -->
+  <div class="tab-bar" id="tabBar" style="display:none">
+    <button class="tab-btn active" data-tab="overview">Overview</button>
+    <button class="tab-btn" data-tab="bydesk">By Commissioning Desk</button>
+    <button class="tab-btn" data-tab="bycl">By Commissioned Length</button>
+  </div>
+
+  <!-- Tab: Overview -->
+  <div id="tab-overview">
 
   <!-- Metric cards -->
   <div class="metrics" id="metrics" style="display:none">
@@ -301,6 +332,57 @@
     <div class="table-footer" id="tableFooter"></div>
   </div>
 
+  </div><!-- end tab-overview -->
+
+  <!-- Tab: By Commissioning Desk -->
+  <div id="tab-bydesk" style="display:none">
+
+    <div class="chart-card" style="margin-bottom:16px">
+      <h3>Average deviation from commissioned length by desk</h3>
+      <canvas id="deskBarChart"></canvas>
+    </div>
+
+    <div class="table-card">
+      <div class="table-header">
+        <h3>Deviation by commissioning desk</h3>
+        <div class="table-actions">
+          <input type="text" class="table-search" id="deskSearch" placeholder="Filter desks…">
+        </div>
+      </div>
+      <div id="deskTableWrap">
+        <div class="empty-state">
+          <div class="icon">🔍</div>
+          <p>Run a search to see desk breakdown.</p>
+        </div>
+      </div>
+      <div class="table-footer" id="deskTableFooter"></div>
+    </div>
+
+  </div><!-- end tab-bydesk -->
+
+  <!-- Tab: By Commissioned Length -->
+  <div id="tab-bycl" style="display:none">
+
+    <div class="chart-card" style="margin-bottom:16px">
+      <h3>Average deviation from commissioned length by commissioned length value</h3>
+      <canvas id="clBarChart"></canvas>
+    </div>
+
+    <div class="table-card">
+      <div class="table-header">
+        <h3>Deviation by commissioned length</h3>
+      </div>
+      <div id="clTableWrap">
+        <div class="empty-state">
+          <div class="icon">🔍</div>
+          <p>Run a search to see commissioned length breakdown.</p>
+        </div>
+      </div>
+      <div class="table-footer" id="clTableFooter"></div>
+    </div>
+
+  </div><!-- end tab-bycl -->
+
 </div>
 
 <script>
@@ -308,8 +390,26 @@
   let allArticles = [];
   let filteredArticles = [];
   let barChart = null;
+  let deskBarChart = null;
+  let clBarChart = null;
   let sortCol = 'creationDate';
   let sortDir = 'desc';
+  let deskSortCol = 'avg_deviation';
+  let deskSortDir = 'desc';
+  let allDeskRows = [];
+  let filteredDeskRows = [];
+
+  // ─── Tab switching ────────────────────────────────────────────────────────────
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      const tab = btn.dataset.tab;
+      document.getElementById('tab-overview').style.display = tab === 'overview' ? '' : 'none';
+      document.getElementById('tab-bydesk').style.display = tab === 'bydesk' ? '' : 'none';
+      document.getElementById('tab-bycl').style.display = tab === 'bycl' ? '' : 'none';
+    });
+  });
 
   // ─── Custom commissioned length toggle ───────────────────────────────────────
   document.getElementById('clFilter').addEventListener('change', function() {
@@ -353,7 +453,9 @@
       }
 
       allArticles = data.articles;
-      renderDashboard(data.summary, data.total_fetched, data.capped);
+      renderDashboard(data.summary, data.total_fetched, data.capped, data.articles.length);
+      renderDeskTab(data.summary.by_desk);
+      renderClTab(data.summary.by_commissioned_length);
     } catch (err) {
       setError('Network error: ' + err.message);
     } finally {
@@ -362,12 +464,12 @@
   }
 
   // ─── Render ──────────────────────────────────────────────────────────────────
-  function renderDashboard(summary, totalFetched, capped) {
+  function renderDashboard(summary, totalFetched, capped, returnedCount) {
     const statusBar = document.getElementById('statusBar');
     statusBar.className = 'status-bar';
     let msg = `Fetched ${totalFetched.toLocaleString()} article${totalFetched !== 1 ? 's' : ''}.`;
     if (capped) msg += ' Results capped at 10,000 — narrow your date range for complete data.';
-    else if (totalFetched > 1000) msg += ' Showing first 1,000 in table.';
+    if (returnedCount < totalFetched) msg += ` Showing first ${returnedCount.toLocaleString()} in table — download CSV for full data.`;
     statusBar.textContent = msg;
 
     // Metrics
@@ -380,6 +482,9 @@
       pct(summary.pct_uses_standard_length);
     document.getElementById('metricAvgWc').textContent =
       summary.avg_wordcount.toLocaleString();
+
+    // Show tab bar
+    document.getElementById('tabBar').style.display = '';
 
     // Charts
     document.getElementById('charts').style.display = '';
@@ -483,8 +588,8 @@
 
       tbody.push(`<tr>
         <td>${headlineCell}</td>
-        <td>${a.creationDate || ''}</td>
-        <td>${a.publicationDate || ''}</td>
+        <td>${fmtDate(a.creationDate)}</td>
+        <td>${fmtDate(a.publicationDate)}</td>
         <td>${esc(a.commissioningDesk)}</td>
         <td>${a.wordcount != null ? a.wordcount.toLocaleString() : '—'}</td>
         <td>${a.commissionedLength != null ? a.commissionedLength.toLocaleString() : '—'}</td>
@@ -535,8 +640,8 @@
       (a.commissioningDesk || '').toLowerCase().includes(q) ||
       String(a.wordcount || '').includes(q) ||
       String(a.commissionedLength || '').includes(q) ||
-      (a.creationDate || '').includes(q) ||
-      (a.publicationDate || '').includes(q)
+      fmtDate(a.creationDate).includes(q) ||
+      fmtDate(a.publicationDate).includes(q)
     );
     renderTable();
   });
@@ -567,6 +672,12 @@
     return String(str || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  function fmtDate(iso) {
+    if (!iso) return '';
+    const [y, m, d] = iso.split('-');
+    return `${d}/${m}/${y}`;
+  }
+
   function setLoading(loading) {
     const btn = document.getElementById('searchBtn');
     const statusBar = document.getElementById('statusBar');
@@ -579,6 +690,246 @@
       btn.disabled = false;
       btn.textContent = 'Search';
     }
+  }
+
+  // ─── By Desk Tab ─────────────────────────────────────────────────────────────
+  const deskColumns = [
+    { key: 'desk',            label: 'Commissioning desk' },
+    { key: 'total',           label: 'Articles' },
+    { key: 'with_cl',         label: 'With comm. length' },
+    { key: 'sample_size',     label: 'Sample size' },
+    { key: 'avg_deviation',   label: 'Avg deviation' },
+    { key: 'median_deviation',label: 'Median deviation' },
+  ];
+
+  function renderDeskTab(byDesk) {
+    allDeskRows = byDesk;
+    filteredDeskRows = [...allDeskRows];
+    document.getElementById('deskSearch').value = '';
+    deskSortCol = 'avg_deviation';
+    deskSortDir = 'desc';
+    renderDeskChart(byDesk);
+    renderDeskTable();
+  }
+
+  function renderDeskChart(byDesk) {
+    // Only show desks with deviation data, top 30 by avg deviation
+    const rows = byDesk
+      .filter(d => d.avg_deviation !== null)
+      .slice(0, 30);
+
+    const ctx = document.getElementById('deskBarChart').getContext('2d');
+    if (deskBarChart) deskBarChart.destroy();
+
+    deskBarChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: rows.map(d => d.desk),
+        datasets: [{
+          label: 'Avg deviation (%)',
+          data: rows.map(d => d.avg_deviation),
+          backgroundColor: '#052962cc',
+          borderRadius: 3,
+        }]
+      },
+      options: {
+        indexAxis: 'y',
+        responsive: true,
+        scales: {
+          x: {
+            title: { display: true, text: 'Avg deviation (%)', font: { size: 11 } },
+            ticks: { font: { size: 11 } },
+            grid: { color: '#f0f0f0' }
+          },
+          y: {
+            ticks: { font: { size: 11 } },
+            grid: { display: false }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          datalabels: {
+            anchor: 'end',
+            align: 'end',
+            formatter: v => v.toFixed(1) + '%',
+            font: { size: 10, weight: '600' },
+            color: '#333',
+          }
+        }
+      },
+      plugins: [ChartDataLabels],
+    });
+
+    // Resize canvas height based on number of rows
+    document.getElementById('deskBarChart').style.maxHeight = Math.max(300, rows.length * 26) + 'px';
+  }
+
+  function renderDeskTable() {
+    const sorted = [...filteredDeskRows].sort((a, b) => {
+      let av = a[deskSortCol] ?? (deskSortDir === 'asc' ? Infinity : -Infinity);
+      let bv = b[deskSortCol] ?? (deskSortDir === 'asc' ? Infinity : -Infinity);
+      if (typeof av === 'string') av = av.toLowerCase();
+      if (typeof bv === 'string') bv = bv.toLowerCase();
+      if (av < bv) return deskSortDir === 'asc' ? -1 : 1;
+      if (av > bv) return deskSortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    const headerCells = deskColumns.map(c => {
+      let cls = deskSortCol === c.key ? (deskSortDir === 'asc' ? 'sorted-asc' : 'sorted-desc') : '';
+      return `<th class="${cls}" data-dkey="${c.key}" style="cursor:pointer">${c.label}</th>`;
+    }).join('');
+
+    const tbody = sorted.map(d => `<tr>
+      <td>${esc(d.desk)}</td>
+      <td>${d.total.toLocaleString()}</td>
+      <td>${d.with_cl.toLocaleString()}</td>
+      <td>${d.sample_size.toLocaleString()}</td>
+      <td>${d.avg_deviation !== null ? deviationBadge(d.avg_deviation) : '<span class="badge badge-na">N/A</span>'}</td>
+      <td>${d.median_deviation !== null ? deviationBadge(d.median_deviation) : '<span class="badge badge-na">N/A</span>'}</td>
+    </tr>`).join('') || '<tr><td colspan="6" style="text-align:center;padding:20px;color:#999">No desks match the filter.</td></tr>';
+
+    document.getElementById('deskTableWrap').innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>${headerCells}</tr></thead>
+          <tbody>${tbody}</tbody>
+        </table>
+      </div>`;
+
+    document.getElementById('deskTableFooter').textContent =
+      `Showing ${sorted.length.toLocaleString()} desk${sorted.length !== 1 ? 's' : ''}.`;
+
+    document.querySelectorAll('thead th[data-dkey]').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.dkey;
+        if (deskSortCol === key) {
+          deskSortDir = deskSortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          deskSortCol = key;
+          deskSortDir = key === 'desk' ? 'asc' : 'desc';
+        }
+        renderDeskTable();
+      });
+    });
+  }
+
+  document.getElementById('deskSearch').addEventListener('input', function() {
+    const q = this.value.toLowerCase();
+    filteredDeskRows = allDeskRows.filter(d => d.desk.toLowerCase().includes(q));
+    renderDeskTable();
+  });
+
+  // ─── By Commissioned Length Tab ───────────────────────────────────────────────
+  let allClRows = [];
+  let clSortCol = 'commissioned_length';
+  let clSortDir = 'asc';
+
+  const clColumns = [
+    { key: 'commissioned_length', label: 'Commissioned length' },
+    { key: 'total',               label: 'Articles' },
+    { key: 'sample_size',         label: 'Sample size' },
+    { key: 'avg_deviation',       label: 'Avg deviation' },
+    { key: 'median_deviation',    label: 'Median deviation' },
+  ];
+
+  function renderClTab(byCommissionedLength) {
+    allClRows = byCommissionedLength;
+    clSortCol = 'commissioned_length';
+    clSortDir = 'asc';
+    renderClChart(byCommissionedLength);
+    renderClTable();
+  }
+
+  function renderClChart(rows) {
+    const withDev = rows.filter(r => r.avg_deviation !== null);
+    const ctx = document.getElementById('clBarChart').getContext('2d');
+    if (clBarChart) clBarChart.destroy();
+
+    clBarChart = new Chart(ctx, {
+      type: 'bar',
+      data: {
+        labels: withDev.map(r => r.commissioned_length + ' words'),
+        datasets: [{
+          label: 'Avg deviation (%)',
+          data: withDev.map(r => r.avg_deviation),
+          backgroundColor: '#052962cc',
+          borderRadius: 3,
+        }]
+      },
+      options: {
+        responsive: true,
+        scales: {
+          x: {
+            ticks: { font: { size: 11 } },
+            grid: { display: false }
+          },
+          y: {
+            title: { display: true, text: 'Avg deviation (%)', font: { size: 11 } },
+            ticks: { font: { size: 11 } },
+            grid: { color: '#f0f0f0' }
+          }
+        },
+        plugins: {
+          legend: { display: false },
+          datalabels: {
+            anchor: 'end',
+            align: 'end',
+            formatter: v => v.toFixed(1) + '%',
+            font: { size: 11, weight: '600' },
+            color: '#333',
+          }
+        }
+      },
+      plugins: [ChartDataLabels],
+    });
+  }
+
+  function renderClTable() {
+    const sorted = [...allClRows].sort((a, b) => {
+      let av = a[clSortCol] ?? (clSortDir === 'asc' ? Infinity : -Infinity);
+      let bv = b[clSortCol] ?? (clSortDir === 'asc' ? Infinity : -Infinity);
+      if (av < bv) return clSortDir === 'asc' ? -1 : 1;
+      if (av > bv) return clSortDir === 'asc' ? 1 : -1;
+      return 0;
+    });
+
+    const headerCells = clColumns.map(c => {
+      let cls = clSortCol === c.key ? (clSortDir === 'asc' ? 'sorted-asc' : 'sorted-desc') : '';
+      return `<th class="${cls}" data-clkey="${c.key}" style="cursor:pointer">${c.label}</th>`;
+    }).join('');
+
+    const tbody = sorted.map(r => `<tr>
+      <td><strong>${r.commissioned_length.toLocaleString()}</strong></td>
+      <td>${r.total.toLocaleString()}</td>
+      <td>${r.sample_size.toLocaleString()}</td>
+      <td>${r.avg_deviation !== null ? deviationBadge(r.avg_deviation) : '<span class="badge badge-na">N/A</span>'}</td>
+      <td>${r.median_deviation !== null ? deviationBadge(r.median_deviation) : '<span class="badge badge-na">N/A</span>'}</td>
+    </tr>`).join('') || '<tr><td colspan="5" style="text-align:center;padding:20px;color:#999">No data.</td></tr>';
+
+    document.getElementById('clTableWrap').innerHTML = `
+      <div class="table-wrap">
+        <table>
+          <thead><tr>${headerCells}</tr></thead>
+          <tbody>${tbody}</tbody>
+        </table>
+      </div>`;
+
+    document.getElementById('clTableFooter').textContent =
+      `${sorted.length.toLocaleString()} commissioned length value${sorted.length !== 1 ? 's' : ''}.`;
+
+    document.querySelectorAll('thead th[data-clkey]').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.clkey;
+        if (clSortCol === key) {
+          clSortDir = clSortDir === 'asc' ? 'desc' : 'asc';
+        } else {
+          clSortCol = key;
+          clSortDir = 'asc';
+        }
+        renderClTable();
+      });
+    });
   }
 
   function setError(msg) {
