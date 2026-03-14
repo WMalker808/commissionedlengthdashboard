@@ -80,6 +80,9 @@ def fetch_articles(
             break
         current_page += 1
 
+    # Strip out erroneous commissioned lengths below 50
+    articles = [a for a in articles if a["commissionedLength"] is None or a["commissionedLength"] >= 50]
+
     # Apply filters in Python
     if desk_filter:
         pattern = re.compile(r'\b' + re.escape(desk_filter) + r'\b', re.IGNORECASE)
@@ -147,6 +150,76 @@ def build_summary(articles: list[dict]) -> dict:
         for d, v in sorted(by_date_map.items())
     ]
 
+    # By commissioning desk
+    desk_map: dict[str, dict] = {}
+    for a in articles:
+        desk = a["commissioningDesk"] or "Unknown"
+        if desk not in desk_map:
+            desk_map[desk] = {"total": 0, "with_cl": 0, "deviations": []}
+        desk_map[desk]["total"] += 1
+        if a["commissionedLength"] is not None:
+            desk_map[desk]["with_cl"] += 1
+        if a["deviation"] is not None:
+            desk_map[desk]["deviations"].append(a["deviation"])
+
+    by_desk = []
+    for desk, v in desk_map.items():
+        devs = v["deviations"]
+        avg_dev = round(sum(devs) / len(devs), 1) if devs else None
+        sorted_devs = sorted(devs)
+        n = len(sorted_devs)
+        if n == 0:
+            median_dev = None
+        elif n % 2 == 1:
+            median_dev = sorted_devs[n // 2]
+        else:
+            median_dev = round((sorted_devs[n // 2 - 1] + sorted_devs[n // 2]) / 2, 1)
+        by_desk.append({
+            "desk": desk,
+            "total": v["total"],
+            "with_cl": v["with_cl"],
+            "avg_deviation": avg_dev,
+            "median_deviation": median_dev,
+            "sample_size": len(devs),
+        })
+
+    # Sort by avg deviation descending (desks with no deviation data go last)
+    by_desk.sort(key=lambda x: (x["avg_deviation"] is None, x["avg_deviation"] or 0), reverse=True)
+
+    # By commissioned length value
+    cl_map: dict[int, dict] = {}
+    for a in articles:
+        cl = a["commissionedLength"]
+        if cl is None:
+            continue
+        if cl not in cl_map:
+            cl_map[cl] = {"total": 0, "deviations": []}
+        cl_map[cl]["total"] += 1
+        if a["deviation"] is not None:
+            cl_map[cl]["deviations"].append(a["deviation"])
+
+    by_commissioned_length = []
+    for cl, v in cl_map.items():
+        devs = v["deviations"]
+        avg_dev = round(sum(devs) / len(devs), 1) if devs else None
+        sorted_devs = sorted(devs)
+        n = len(sorted_devs)
+        if n == 0:
+            median_dev = None
+        elif n % 2 == 1:
+            median_dev = sorted_devs[n // 2]
+        else:
+            median_dev = round((sorted_devs[n // 2 - 1] + sorted_devs[n // 2]) / 2, 1)
+        by_commissioned_length.append({
+            "commissioned_length": cl,
+            "total": v["total"],
+            "avg_deviation": avg_dev,
+            "median_deviation": median_dev,
+            "sample_size": len(devs),
+        })
+
+    by_commissioned_length.sort(key=lambda x: x["commissioned_length"])
+
     return {
         "total": total,
         "has_commissioned_length": has_cl,
@@ -155,4 +228,6 @@ def build_summary(articles: list[dict]) -> dict:
         "avg_wordcount": avg_wc,
         "length_distribution": length_dist,
         "by_date": by_date,
+        "by_desk": by_desk,
+        "by_commissioned_length": by_commissioned_length,
     }
