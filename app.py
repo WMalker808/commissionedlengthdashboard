@@ -65,9 +65,9 @@ def search():
     capped = result["capped"]
     summary = build_summary(articles)
 
-    # Limit table rows to 1000 to keep response size reasonable
+    # Table rows has been raised to 2000 to check if this reduces performance
     return jsonify({
-        "articles": articles[:1000],
+        "articles": articles[:2000],
         "total_fetched": len(articles),
         "capped": capped,
         "summary": summary,
